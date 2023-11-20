@@ -45,9 +45,9 @@ parts:
     plugin: make
     build-snaps:
       - go/1.19/stable
-    source: https://github.com/glauth/glauth
+    source: https://github.com/shipperizer/glauth
     source-type: git
-    source-tag: v2.2.1
+    source-branch: tls/ldap
     source-subdir: v2
     override-build: |
       export GOARCH=$(go env GOARCH)
