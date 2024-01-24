@@ -49,6 +49,10 @@ parts:
     source-type: git
     source-commit: 56ccb881b5c9b9a0d7c70b3aaacaf898d9bcabe2
     source-subdir: v2
+    override-pull: |
+      git config --global url."https://github.com/".insteadOf git@github.com:
+      git config -l
+      craftctl default
     override-build: |
       export GOARCH=$(go env GOARCH)
 
