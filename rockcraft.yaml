@@ -1,7 +1,7 @@
 name: glauth
 base: bare
-build-base: ubuntu:22.04
-version: "2.2.1"
+build-base: ubuntu@22.04
+version: "2.3.0"
 summary: GLAuth
 description: |
   GLAuth LDAP authentication server
@@ -44,17 +44,21 @@ parts:
   glauth:
     plugin: make
     build-snaps:
-      - go/1.19/stable
+      - go/1.21/stable
     source: https://github.com/glauth/glauth
     source-type: git
-    source-tag: v2.2.1
+    source-commit: 56ccb881b5c9b9a0d7c70b3aaacaf898d9bcabe2
     source-subdir: v2
+    override-pull: |
+      git config --global url."https://github.com/".insteadOf git@github.com:
+      git config -l
+      craftctl default
     override-build: |
       export GOARCH=$(go env GOARCH)
 
       U=https://github.com/glauth/glauth-postgres \
         M=pkg/plugins/glauth-postgres \
-        make -C $CRAFT_PART_SRC_WORK pull-plugin
+        make -C $CRAFT_PART_SRC_WORK pull-plugin-dependencies
 
       PLUGIN_ARCH=$GOARCH \
         make -C $CRAFT_PART_SRC_WORK -j$CRAFT_PARALLEL_BUILD_COUNT \
