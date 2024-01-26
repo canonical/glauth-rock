@@ -21,11 +21,20 @@ installed. Import the created ROCK image into Docker:
 $ sudo /snap/rockcraft/current/bin/skopeo --insecure-policy copy oci-archive:<local-rock-name>.rock docker-daemon:<image-name>:<image-tag>
 ```
 
-Run a GLAuth container using Docker:
+Run a GLAuth container using Docker with [a minimum working config file](config/glauth.cfg):
 
 ```shell
-$ docker run --rm -p 127.0.0.1:3893:3893/tcp --name <container-name> <image-name>:<image-tag>
+$ docker run -d \
+    --rm \
+    -p 127.0.0.1:3893:3893/tcp \
+    --name <container-name> \
+    <image-name>:<image-tag>
 ```
+
+> ⚠️ **NOTE**
+>
+> Please refer to the [GLAuth](https://github.com/glauth/glauth) for more
+> details about the configuration file.
 
 ## Deploying
 
