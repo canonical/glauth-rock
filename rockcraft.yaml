@@ -1,7 +1,7 @@
 name: glauth
 base: bare
 build-base: ubuntu@22.04
-version: "2.3.0"
+version: "2.3.1"
 summary: GLAuth
 description: |
   GLAuth LDAP authentication server
@@ -47,7 +47,7 @@ parts:
       - go/1.21/stable
     source: https://github.com/glauth/glauth
     source-type: git
-    source-commit: 56ccb881b5c9b9a0d7c70b3aaacaf898d9bcabe2
+    source-tag: v2.3.1
     source-subdir: v2
     override-pull: |
       git config --global url."https://github.com/".insteadOf git@github.com:
