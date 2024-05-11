@@ -1,9 +1,12 @@
 # GLAuth ROCKs
 
-[![Build](https://img.shields.io/github/actions/workflow/status/canonical/glauth-rock/push_main.yaml?label=Build)](https://github.com/canonical/glauth-rock/actions/workflows/push_main.yaml)
-![Ubuntu](https://img.shields.io/badge/Ubuntu-22.04-E95420?label=Ubuntu&logo=ubuntu&logoColor=white)
+![Latest Version](https://img.shields.io/badge/dynamic/yaml?url=https%3A%2F%2Fraw.githubusercontent.com%2Fcanonical%2Fglauth-rock%2Fmain%2Frockcraft.yaml&query=%24.version&label=Release&color=red)
 ![Postgres](https://img.shields.io/badge/postgres-%23316192.svg?logo=postgresql&logoColor=white)
 [![License](https://img.shields.io/github/license/canonical/glauth-rock?label=License)](https://github.com/canonical/glauth-rock/blob/main/LICENSE)
+
+[![Build](https://img.shields.io/github/actions/workflow/status/canonical/glauth-rock/push_main.yaml?label=Build)](https://github.com/canonical/glauth-rock/actions/workflows/push_main.yaml)
+[![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit)](https://github.com/pre-commit/pre-commit)
+[![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-%23FE5196.svg)](https://conventionalcommits.org)
 
 [ROCKs](https://canonical-rockcraft.readthedocs-hosted.com/en/latest/explanation/rocks/#rocks-explanation)
 for [GLAuth](https://github.com/glauth/glauth).
