@@ -4,7 +4,7 @@
 
 Please refer to
 the [rockcraft](https://canonical-craft-parts.readthedocs-hosted.com/en/latest/reference/index.html)
-documentations to learn how to develop a ROCK image.
+documentations to learn how to develop a rock.
 
 Please install `pre-commit` hooks to help enforce various validations:
 
@@ -14,14 +14,14 @@ pre-commit install -t commit-msg
 
 ## Building & Running Locally
 
-You can build the ROCK image using the following command:
+You can build the rock using the following command:
 
 ```shell
 rockcraft pack -v
 ```
 
 Assuming the [`skopeo`](https://snapcraft.io/install/skopeo/ubuntu) has been
-installed. Import the created ROCK image into Docker:
+installed. Import the created rock into Docker:
 
 ```shell
 sudo /snap/rockcraft/current/bin/skopeo --insecure-policy copy oci-archive:<local-rock-name>.rock docker-daemon:<image-name>:<image-tag>
@@ -46,7 +46,7 @@ docker run -d \
 
 ### Prerequisites
 
-Before deploying the GLAuth ROCK image locally, there are several prerequisites:
+Before deploying the GLAuth rock locally, there are several prerequisites:
 
 - Enable the
   MicroK8s' [built-in registry](https://microk8s.io/docs/registry-built-in)
@@ -69,7 +69,7 @@ docker push localhost:32000/<image-name>:<image-tag>
 
 ### Deploy
 
-Run the following command to deploy a locally-built ROCK image with
+Run the following command to deploy a locally-built rock with
 the [glauth-k8s-operator](https://github.com/canonical/glauth-k8s-operator)
 charm:
 
