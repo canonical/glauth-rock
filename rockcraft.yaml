@@ -27,6 +27,11 @@ parts:
     stage:
       - etc/config/glauth.cfg
 
+  libc:
+    plugin: nil
+    stage-packages:
+      - libc6_libs
+
   glauth:
     plugin: make
     build-snaps:
