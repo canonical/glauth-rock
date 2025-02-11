@@ -46,6 +46,13 @@ parts:
         M=pkg/plugins/glauth-postgres \
         make -C $CRAFT_PART_SRC_WORK pull-plugin-dependencies
 
+      echo "###### patch CVEs #######"
+      cd $CRAFT_PART_SRC_WORK
+      go get -u golang.org/x/crypto
+      go get -u golang.org/x/net
+      cd -
+      echo "#########################"
+
       PLUGIN_ARCH=$GOARCH \
         make -C $CRAFT_PART_SRC_WORK -j$CRAFT_PARALLEL_BUILD_COUNT \
         plugin_postgres_linux_$GOARCH linux$GOARCH
