@@ -7,16 +7,13 @@ description: |
   GLAuth LDAP authentication server
 license: Apache-2.0
 run-user: _daemon_
-
 platforms:
   amd64:
-
 services:
   glauth:
     override: replace
     command: glauth -c /etc/config/glauth.cfg
     startup: enabled
-
 parts:
   config:
     plugin: dump
@@ -26,16 +23,14 @@ parts:
       glauth.cfg: etc/config/
     stage:
       - etc/config/glauth.cfg
-
   libc:
     plugin: nil
     stage-packages:
       - libc6_libs
-
   glauth:
     plugin: make
     build-snaps:
-      - go/1.21/stable
+      - go/1.23/stable
     source: https://github.com/glauth/glauth
     source-type: git
     source-tag: v2.3.1
@@ -51,6 +46,13 @@ parts:
         M=pkg/plugins/glauth-postgres \
         make -C $CRAFT_PART_SRC_WORK pull-plugin-dependencies
 
+      echo "###### patch CVEs #######"
+      cd $CRAFT_PART_SRC_WORK
+      go get -u golang.org/x/crypto
+      go get -u golang.org/x/net
+      cd -
+      echo "#########################"
+
       PLUGIN_ARCH=$GOARCH \
         make -C $CRAFT_PART_SRC_WORK -j$CRAFT_PARALLEL_BUILD_COUNT \
         plugin_postgres_linux_$GOARCH linux$GOARCH
@@ -61,3 +63,11 @@ parts:
     stage:
       - bin/glauth
       - bin/postgres.so
+  deb-security-manifest:
+    plugin: nil
+    after:
+      - libc
+    override-prime: |
+      set -x
+      mkdir -p $CRAFT_PRIME/usr/share/rocks/
+      (echo "# os-release" && cat /etc/os-release && echo "# dpkg-query" && dpkg-query --admindir=$CRAFT_PRIME/var/lib/dpkg/ -f '${db:Status-Abbrev},${binary:Package},${Version},${source:Package},${Source:Version}\n' -W) > $CRAFT_PRIME/usr/share/rocks/dpkg.query
