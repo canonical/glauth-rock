@@ -15,7 +15,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Log in to the Container registry
-        uses: docker/login-action@52ad1d2e01372e4ca67ace1e309f9533f8373710
+        uses: docker/login-action@75bf9a79af089e9aa009972a6ecb22190a520679
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
