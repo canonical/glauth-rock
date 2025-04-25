@@ -27,8 +27,17 @@ parts:
     plugin: nil
     stage-packages:
       - libc6_libs
+  patches:
+    plugin: dump
+    source: patches/
+    organize:
+      "*": patches/
+    prime:
+      - -*
   glauth:
     plugin: make
+    after:
+      - patches
     build-snaps:
       - go/1.23/stable
     source: https://github.com/glauth/glauth
@@ -42,9 +51,10 @@ parts:
     override-build: |
       export GOARCH=$(go env GOARCH)
 
-      U=https://github.com/glauth/glauth-postgres \
-        M=pkg/plugins/glauth-postgres \
-        make -C $CRAFT_PART_SRC_WORK pull-plugin-dependencies
+      for patch in ${CRAFT_STAGE}/patches/*.patch; do
+        echo "Applying $(basename "$patch") ..."
+        git -C $CRAFT_PART_SRC am $patch
+      done
 
       echo "###### patch CVEs #######"
       cd $CRAFT_PART_SRC_WORK
@@ -52,6 +62,10 @@ parts:
       go get -u golang.org/x/net
       cd -
       echo "#########################"
+
+      U=https://github.com/glauth/glauth-postgres \
+        M=pkg/plugins/glauth-postgres \
+        make -C $CRAFT_PART_SRC_WORK pull-plugin-dependencies
 
       PLUGIN_ARCH=$GOARCH \
         make -C $CRAFT_PART_SRC_WORK -j$CRAFT_PARALLEL_BUILD_COUNT \

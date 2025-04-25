@@ -1,0 +1,491 @@
+From 95b603575ce9100268ef704339efb9d2a780d9f2 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jos=C3=A9=20Juli=C3=A1n=20Espina?=
+ <julian.espina@canonical.com>
+Date: Fri, 25 Apr 2025 09:36:26 -0600
+Subject: [PATCH 1/2] fix: correctly fetch group names on all handlers
+
+---
+ v2/internal/toml/config.go                 |  6 ++++--
+ v2/pkg/config/config.go                    |  7 +++++--
+ v2/pkg/handler/config.go                   | 23 ++++++++++++---------
+ v2/pkg/handler/ldap.go                     |  2 +-
+ v2/pkg/handler/ldapopshelper.go            |  6 +++---
+ v2/pkg/handler/owncloud.go                 | 13 +++++++-----
+ v2/pkg/plugins/basesqlhandler.go           | 21 +++++++++++--------
+ v2/pkg/server/server.go                    |  2 +-
+ v2/sample-simple.cfg                       | 24 +++++++++++++++-------
+ v2/scripts/ci/good-results/posixGroupList0 | 14 ++++++-------
+ 10 files changed, 71 insertions(+), 47 deletions(-)
+
+diff --git a/v2/internal/toml/config.go b/v2/internal/toml/config.go
+index 4a0f101..ccf6b0a 100644
+--- a/v2/internal/toml/config.go
++++ b/v2/internal/toml/config.go
+@@ -179,11 +179,13 @@ func parseConfigFile(configFileLocation string, args map[string]interface{}) (*c
+ 	// Patch with default values where not specified
+ 	for i := range cfg.Backends {
+ 		if cfg.Backends[i].NameFormat == "" {
+-			cfg.Backends[i].NameFormat = "cn"
++			cfg.Backends[i].NameFormat = "cn,uid"
+ 		}
++		cfg.Backends[i].NameFormatAsArray = strings.Split(cfg.Backends[i].NameFormat, ",")
+ 		if cfg.Backends[i].GroupFormat == "" {
+-			cfg.Backends[i].GroupFormat = "ou"
++			cfg.Backends[i].GroupFormat = "ou,cn"
+ 		}
++		cfg.Backends[i].GroupFormatAsArray = strings.Split(cfg.Backends[i].GroupFormat, ",")
+ 		if cfg.Backends[i].SSHKeyAttr == "" {
+ 			cfg.Backends[i].SSHKeyAttr = "sshPublicKey"
+ 		}
+diff --git a/v2/pkg/config/config.go b/v2/pkg/config/config.go
+index 62e9038..9181c10 100644
+--- a/v2/pkg/config/config.go
++++ b/v2/pkg/config/config.go
+@@ -9,8 +9,10 @@ type (
+ 		Datastore                 string
+ 		Insecure                  bool     // For LDAP and owncloud backend only
+ 		Servers                   []string // For LDAP and owncloud backend only
+-		NameFormat                string
+-		GroupFormat               string
++		NameFormat                string   // e.g. cn, ou, uid, or a comma separated list of them
++		NameFormatAsArray         []string // we will explode NameFormat on commas
++		GroupFormat               string   // e.g. cn, ou, gid, or a comma separated list of them
++		GroupFormatAsArray        []string // we will explode GroupFormat on commas
+ 		SSHKeyAttr                string
+ 		UseGraphAPI               bool   // For ownCloud backend only
+ 		Plugin                    string // Path to plugin library, for plugin backend only
+@@ -111,6 +113,7 @@ type (
+ 		Name          string
+ 		UnixID        int // TODO: remove after deprecating UnixID on User and Group
+ 		GIDNumber     int
++		Capabilities  []Capability
+ 		IncludeGroups []int
+ 	}
+ 
+diff --git a/v2/pkg/handler/config.go b/v2/pkg/handler/config.go
+index 6146313..52ff3cc 100644
+--- a/v2/pkg/handler/config.go
++++ b/v2/pkg/handler/config.go
+@@ -183,8 +183,9 @@ func (h configHandler) FindPosixAccounts(ctx context.Context, hierarchy string)
+ 
+ 	for _, u := range h.cfg.Users {
+ 		attrs := []*ldap.EntryAttribute{}
+-		attrs = append(attrs, &ldap.EntryAttribute{Name: h.backend.NameFormat, Values: []string{u.Name}})
+-		attrs = append(attrs, &ldap.EntryAttribute{Name: "uid", Values: []string{u.Name}})
++		for _, nameAttr := range h.backend.NameFormatAsArray {
++			attrs = append(attrs, &ldap.EntryAttribute{Name: nameAttr, Values: []string{u.Name}})
++		}
+ 
+ 		if len(u.GivenName) > 0 {
+ 			attrs = append(attrs, &ldap.EntryAttribute{Name: "givenName", Values: []string{u.GivenName}})
+@@ -260,9 +261,9 @@ func (h configHandler) FindPosixAccounts(ctx context.Context, hierarchy string)
+ 		}
+ 		var dn string
+ 		if hierarchy == "" {
+-			dn = fmt.Sprintf("%s=%s,%s=%s,%s", h.backend.NameFormat, u.Name, h.backend.GroupFormat, h.getGroupName(ctx, u.PrimaryGroup), h.backend.BaseDN)
++			dn = fmt.Sprintf("%s=%s,%s=%s,%s", h.backend.NameFormatAsArray[0], u.Name, h.backend.GroupFormatAsArray[0], h.getGroupName(ctx, u.PrimaryGroup), h.backend.BaseDN)
+ 		} else {
+-			dn = fmt.Sprintf("%s=%s,%s=%s,%s,%s", h.backend.NameFormat, u.Name, h.backend.GroupFormat, h.getGroupName(ctx, u.PrimaryGroup), hierarchy, h.backend.BaseDN)
++			dn = fmt.Sprintf("%s=%s,%s=%s,%s,%s", h.backend.NameFormatAsArray[0], u.Name, h.backend.GroupFormatAsArray[0], h.getGroupName(ctx, u.PrimaryGroup), hierarchy, h.backend.BaseDN)
+ 		}
+ 		entries = append(entries, &ldap.Entry{DN: dn, Attributes: attrs})
+ 	}
+@@ -280,8 +281,10 @@ func (h configHandler) FindPosixGroups(ctx context.Context, hierarchy string) (e
+ 
+ 	for _, g := range h.cfg.Groups {
+ 		attrs := []*ldap.EntryAttribute{}
+-		attrs = append(attrs, &ldap.EntryAttribute{Name: h.backend.GroupFormat, Values: []string{g.Name}})
+-		attrs = append(attrs, &ldap.EntryAttribute{Name: "uid", Values: []string{g.Name}})
++		for _, groupAttr := range h.backend.GroupFormatAsArray {
++			attrs = append(attrs, &ldap.EntryAttribute{Name: groupAttr, Values: []string{g.Name}})
++		}
++
+ 		attrs = append(attrs, &ldap.EntryAttribute{Name: "description", Values: []string{fmt.Sprintf("%s", g.Name)}})
+ 		attrs = append(attrs, &ldap.EntryAttribute{Name: "gidNumber", Values: []string{fmt.Sprintf("%d", g.GIDNumber)}})
+ 		attrs = append(attrs, &ldap.EntryAttribute{Name: "uniqueMember", Values: h.getGroupMemberDNs(ctx, g.GIDNumber)})
+@@ -291,7 +294,7 @@ func (h configHandler) FindPosixGroups(ctx context.Context, hierarchy string) (e
+ 			attrs = append(attrs, &ldap.EntryAttribute{Name: "memberUid", Values: h.getGroupMemberIDs(ctx, g.GIDNumber)})
+ 			attrs = append(attrs, &ldap.EntryAttribute{Name: "objectClass", Values: []string{"posixGroup", "top"}})
+ 		}
+-		dn := fmt.Sprintf("%s=%s,%s,%s", h.backend.GroupFormat, g.Name, hierarchy, h.backend.BaseDN)
++		dn := fmt.Sprintf("%s=%s,%s,%s", h.backend.GroupFormatAsArray[0], g.Name, hierarchy, h.backend.BaseDN)
+ 		entries = append(entries, &ldap.Entry{DN: dn, Attributes: attrs})
+ 	}
+ 
+@@ -320,12 +323,12 @@ func (h configHandler) getGroupMemberDNs(ctx context.Context, gid int) []string
+ 	members := make(map[string]bool)
+ 	for _, u := range h.cfg.Users {
+ 		if u.PrimaryGroup == gid {
+-			dn := fmt.Sprintf("%s=%s,%s=%s%s,%s", h.backend.NameFormat, u.Name, h.backend.GroupFormat, h.getGroupName(ctx, u.PrimaryGroup), insertOuUsers, h.backend.BaseDN)
++			dn := fmt.Sprintf("%s=%s,%s=%s%s,%s", h.backend.NameFormatAsArray[0], u.Name, h.backend.GroupFormatAsArray[0], h.getGroupName(ctx, u.PrimaryGroup), insertOuUsers, h.backend.BaseDN)
+ 			members[dn] = true
+ 		} else {
+ 			for _, othergid := range u.OtherGroups {
+ 				if othergid == gid {
+-					dn := fmt.Sprintf("%s=%s,%s=%s%s,%s", h.backend.NameFormat, u.Name, h.backend.GroupFormat, h.getGroupName(ctx, u.PrimaryGroup), insertOuUsers, h.backend.BaseDN)
++					dn := fmt.Sprintf("%s=%s,%s=%s%s,%s", h.backend.NameFormatAsArray[0], u.Name, h.backend.GroupFormatAsArray[0], h.getGroupName(ctx, u.PrimaryGroup), insertOuUsers, h.backend.BaseDN)
+ 					members[dn] = true
+ 				}
+ 			}
+@@ -408,7 +411,7 @@ func (h configHandler) getGroupDNs(ctx context.Context, gids []int) []string {
+ 	for _, gid := range gids {
+ 		for _, g := range h.cfg.Groups {
+ 			if g.GIDNumber == gid {
+-				dn := fmt.Sprintf("%s=%s,ou=groups,%s", h.backend.GroupFormat, g.Name, h.backend.BaseDN)
++				dn := fmt.Sprintf("%s=%s,ou=groups,%s", h.backend.GroupFormatAsArray[0], g.Name, h.backend.BaseDN)
+ 				groups[dn] = true
+ 			}
+ 
+diff --git a/v2/pkg/handler/ldap.go b/v2/pkg/handler/ldap.go
+index b3dd9a2..32fdbb1 100644
+--- a/v2/pkg/handler/ldap.go
++++ b/v2/pkg/handler/ldap.go
+@@ -117,7 +117,7 @@ func (h ldapHandler) Bind(bindDN, bindSimplePw string, conn net.Conn) (result ld
+ 		lowerBindDN := strings.ToLower(bindDN)
+ 		baseDN := strings.ToLower("," + h.backend.BaseDN)
+ 		parts := strings.Split(strings.TrimSuffix(lowerBindDN, baseDN), ",")
+-		userName := strings.TrimPrefix(parts[0], h.backend.NameFormat+"=")
++		userName := strings.TrimPrefix(parts[0], h.backend.NameFormatAsArray[0]+"=")
+ 
+ 		validotp := false
+ 
+diff --git a/v2/pkg/handler/ldapopshelper.go b/v2/pkg/handler/ldapopshelper.go
+index ab39118..a8474cb 100644
+--- a/v2/pkg/handler/ldapopshelper.go
++++ b/v2/pkg/handler/ldapopshelper.go
+@@ -659,10 +659,10 @@ func (l LDAPOpsHelper) findUser(ctx context.Context, h LDAPOpsHandler, bindDN st
+ 		groupName := ""
+ 		userName := ""
+ 		if len(parts) == 1 {
+-			userName = strings.TrimPrefix(parts[0], h.GetBackend().NameFormat+"=")
++			userName = strings.TrimPrefix(parts[0], h.GetBackend().NameFormatAsArray[0]+"=")
+ 		} else if len(parts) == 2 || (len(parts) == 3 && parts[2] == "ou=users") {
+-			userName = strings.TrimPrefix(parts[0], h.GetBackend().NameFormat+"=")
+-			groupName = strings.TrimPrefix(parts[1], h.GetBackend().GroupFormat+"=")
++			userName = strings.TrimPrefix(parts[0], h.GetBackend().NameFormatAsArray[0]+"=")
++			groupName = strings.TrimPrefix(parts[1], h.GetBackend().GroupFormatAsArray[0]+"=")
+ 		} else {
+ 			h.GetLog().Info().Str("binddn", bindDN).Int("numparts", len(parts)).Msg("BindDN should have only one or two parts")
+ 			for _, part := range parts {
+diff --git a/v2/pkg/handler/owncloud.go b/v2/pkg/handler/owncloud.go
+index 18ad8d8..bd39bdd 100644
+--- a/v2/pkg/handler/owncloud.go
++++ b/v2/pkg/handler/owncloud.go
+@@ -167,7 +167,9 @@ func (h ownCloudHandler) Search(bindDN string, searchReq ldap.SearchRequest, con
+ 		}
+ 		for _, g := range groups {
+ 			attrs := []*ldap.EntryAttribute{}
+-			attrs = append(attrs, &ldap.EntryAttribute{Name: h.backend.GroupFormat, Values: []string{*g.ID}})
++			for _, groupAttr := range h.backend.GroupFormatAsArray {
++				attrs = append(attrs, &ldap.EntryAttribute{Name: groupAttr, Values: []string{*g.ID}})
++			}
+ 			attrs = append(attrs, &ldap.EntryAttribute{Name: "description", Values: []string{fmt.Sprintf("%s from ownCloud", *g.ID)}})
+ 			//			attrs = append(attrs, &ldap.EntryAttribute{"gidNumber", []string{fmt.Sprintf("%d", g.GIDNumber)}})
+ 			attrs = append(attrs, &ldap.EntryAttribute{Name: "objectClass", Values: []string{"posixGroup"}})
+@@ -179,7 +181,7 @@ func (h ownCloudHandler) Search(bindDN string, searchReq ldap.SearchRequest, con
+ 
+ 				attrs = append(attrs, &ldap.EntryAttribute{Name: "memberUid", Values: members})
+ 			}
+-			dn := fmt.Sprintf("%s=%s,ou=groups,%s", h.backend.GroupFormat, *g.ID, h.backend.BaseDN)
++			dn := fmt.Sprintf("%s=%s,ou=groups,%s", h.backend.GroupFormatAsArray[0], *g.ID, h.backend.BaseDN)
+ 			entries = append(entries, &ldap.Entry{DN: dn, Attributes: attrs})
+ 		}
+ 	case "posixaccount", "":
+@@ -197,8 +199,9 @@ func (h ownCloudHandler) Search(bindDN string, searchReq ldap.SearchRequest, con
+ 		}
+ 		for _, u := range users {
+ 			attrs := []*ldap.EntryAttribute{}
+-			attrs = append(attrs, &ldap.EntryAttribute{Name: h.backend.NameFormat, Values: []string{*u.ID}})
+-			attrs = append(attrs, &ldap.EntryAttribute{Name: "uid", Values: []string{*u.ID}})
++			for _, nameAttr := range h.backend.NameFormatAsArray {
++				attrs = append(attrs, &ldap.EntryAttribute{Name: nameAttr, Values: []string{*u.ID}})
++			}
+ 			if u.DisplayName != nil {
+ 				attrs = append(attrs, &ldap.EntryAttribute{Name: "givenName", Values: []string{*u.DisplayName}})
+ 			}
+@@ -209,7 +212,7 @@ func (h ownCloudHandler) Search(bindDN string, searchReq ldap.SearchRequest, con
+ 			attrs = append(attrs, &ldap.EntryAttribute{Name: "objectClass", Values: []string{"posixAccount"}})
+ 
+ 			attrs = append(attrs, &ldap.EntryAttribute{Name: "description", Values: []string{fmt.Sprintf("%s from ownCloud", *u.ID)}})
+-			dn := fmt.Sprintf("%s=%s,%s=%s,%s", h.backend.NameFormat, *u.ID, h.backend.GroupFormat, "users", h.backend.BaseDN)
++			dn := fmt.Sprintf("%s=%s,%s=%s,%s", h.backend.NameFormatAsArray[0], *u.ID, h.backend.GroupFormatAsArray[0], "users", h.backend.BaseDN)
+ 			entries = append(entries, &ldap.Entry{DN: dn, Attributes: attrs})
+ 		}
+ 	}
+diff --git a/v2/pkg/plugins/basesqlhandler.go b/v2/pkg/plugins/basesqlhandler.go
+index f7bf478..ceb517b 100644
+--- a/v2/pkg/plugins/basesqlhandler.go
++++ b/v2/pkg/plugins/basesqlhandler.go
+@@ -454,13 +454,13 @@ func (h databaseHandler) getGroupMemberDNs(ctx context.Context, gid int) []strin
+ 			return []string{}
+ 		}
+ 		if u.PrimaryGroup == gid {
+-			dn := fmt.Sprintf("%s=%s,%s=%s%s,%s", h.backend.NameFormat, u.Name, h.backend.GroupFormat, h.getGroupName(ctx, u.PrimaryGroup), insertOuUsers, h.backend.BaseDN)
++			dn := fmt.Sprintf("%s=%s,%s=%s%s,%s", h.backend.NameFormatAsArray[0], u.Name, h.backend.GroupFormatAsArray[0], h.getGroupName(ctx, u.PrimaryGroup), insertOuUsers, h.backend.BaseDN)
+ 			members[dn] = true
+ 		} else {
+ 			u.OtherGroups = h.commaListToIntTable(ctx, otherGroups)
+ 			for _, othergid := range u.OtherGroups {
+ 				if othergid == gid {
+-					dn := fmt.Sprintf("%s=%s,%s=%s%s,%s", h.backend.NameFormat, u.Name, h.backend.GroupFormat, h.getGroupName(ctx, u.PrimaryGroup), insertOuUsers, h.backend.BaseDN)
++					dn := fmt.Sprintf("%s=%s,%s=%s%s,%s", h.backend.NameFormatAsArray[0], u.Name, h.backend.GroupFormatAsArray[0], h.getGroupName(ctx, u.PrimaryGroup), insertOuUsers, h.backend.BaseDN)
+ 					members[dn] = true
+ 				}
+ 			}
+@@ -562,7 +562,7 @@ func (h databaseHandler) getGroupDNs(ctx context.Context, gids []int) []string {
+ 	for _, gid := range gids {
+ 		for _, g := range h.MemGroups {
+ 			if g.GIDNumber == gid {
+-				dn := fmt.Sprintf("%s=%s,ou=groups,%s", h.backend.GroupFormat, g.Name, h.backend.BaseDN)
++				dn := fmt.Sprintf("%s=%s,ou=groups,%s", h.backend.GroupFormatAsArray[0], g.Name, h.backend.BaseDN)
+ 				groups[dn] = true
+ 			}
+ 
+@@ -609,7 +609,9 @@ func (h databaseHandler) getGroup(ctx context.Context, hierarchy string, g confi
+ 	asGroupOfUniqueNames := hierarchy == "ou=groups"
+ 
+ 	attrs := []*ldap.EntryAttribute{}
+-	attrs = append(attrs, &ldap.EntryAttribute{Name: h.backend.GroupFormat, Values: []string{g.Name}})
++	for _, groupAttr := range h.backend.GroupFormatAsArray {
++		attrs = append(attrs, &ldap.EntryAttribute{Name: groupAttr, Values: []string{g.Name}})
++	}
+ 	attrs = append(attrs, &ldap.EntryAttribute{Name: "description", Values: []string{fmt.Sprintf("%s via LDAP", g.Name)}})
+ 	attrs = append(attrs, &ldap.EntryAttribute{Name: "gidNumber", Values: []string{fmt.Sprintf("%d", g.GIDNumber)}})
+ 	attrs = append(attrs, &ldap.EntryAttribute{Name: "uniqueMember", Values: h.getGroupMemberDNs(ctx, g.GIDNumber)})
+@@ -619,7 +621,7 @@ func (h databaseHandler) getGroup(ctx context.Context, hierarchy string, g confi
+ 		attrs = append(attrs, &ldap.EntryAttribute{Name: "memberUid", Values: h.getGroupMemberIDs(ctx, g.GIDNumber)})
+ 		attrs = append(attrs, &ldap.EntryAttribute{Name: "objectClass", Values: []string{"posixGroup", "top"}})
+ 	}
+-	dn := fmt.Sprintf("%s=%s,ou=groups,%s", h.backend.GroupFormat, g.Name, h.backend.BaseDN)
++	dn := fmt.Sprintf("%s=%s,ou=groups,%s", h.backend.GroupFormatAsArray[0], g.Name, h.backend.BaseDN)
+ 	return &ldap.Entry{DN: dn, Attributes: attrs}
+ }
+ 
+@@ -628,8 +630,9 @@ func (h databaseHandler) getAccount(ctx context.Context, hierarchy string, u con
+ 	defer span.End()
+ 
+ 	attrs := []*ldap.EntryAttribute{}
+-	attrs = append(attrs, &ldap.EntryAttribute{Name: h.backend.NameFormat, Values: []string{u.Name}})
+-	attrs = append(attrs, &ldap.EntryAttribute{Name: "uid", Values: []string{u.Name}})
++	for _, nameAttr := range h.backend.NameFormatAsArray {
++		attrs = append(attrs, &ldap.EntryAttribute{Name: nameAttr, Values: []string{u.Name}})
++	}
+ 
+ 	if len(u.GivenName) > 0 {
+ 		attrs = append(attrs, &ldap.EntryAttribute{Name: "givenName", Values: []string{u.GivenName}})
+@@ -676,9 +679,9 @@ func (h databaseHandler) getAccount(ctx context.Context, hierarchy string, u con
+ 	}
+ 	var dn string
+ 	if hierarchy == "" {
+-		dn = fmt.Sprintf("%s=%s,%s=%s,%s", h.backend.NameFormat, u.Name, h.backend.GroupFormat, h.getGroupName(ctx, u.PrimaryGroup), h.backend.BaseDN)
++		dn = fmt.Sprintf("%s=%s,%s=%s,%s", h.backend.NameFormatAsArray[0], u.Name, h.backend.GroupFormatAsArray[0], h.getGroupName(ctx, u.PrimaryGroup), h.backend.BaseDN)
+ 	} else {
+-		dn = fmt.Sprintf("%s=%s,%s=%s,%s,%s", h.backend.NameFormat, u.Name, h.backend.GroupFormat, h.getGroupName(ctx, u.PrimaryGroup), hierarchy, h.backend.BaseDN)
++		dn = fmt.Sprintf("%s=%s,%s=%s,%s,%s", h.backend.NameFormatAsArray[0], u.Name, h.backend.GroupFormatAsArray[0], h.getGroupName(ctx, u.PrimaryGroup), hierarchy, h.backend.BaseDN)
+ 	}
+ 	return &ldap.Entry{DN: dn, Attributes: attrs}
+ }
+diff --git a/v2/pkg/server/server.go b/v2/pkg/server/server.go
+index e5bb015..d6cac7f 100644
+--- a/v2/pkg/server/server.go
++++ b/v2/pkg/server/server.go
+@@ -133,7 +133,7 @@ func NewServer(opts ...Option) (*LdapSvc, error) {
+ 		case "plugin":
+ 			plug, err := plugin.Open(backend.Plugin)
+ 			if err != nil {
+-				return nil, errors.New(fmt.Sprintf("Unable to load specified backend plugin: %s", err))
++				return nil, fmt.Errorf("unable to load specified backend plugin: %s", err)
+ 			}
+ 			nph, err := plug.Lookup(backend.PluginHandler)
+ 			if err != nil {
+diff --git a/v2/sample-simple.cfg b/v2/sample-simple.cfg
+index 2ed44be..84fe7c0 100644
+--- a/v2/sample-simple.cfg
++++ b/v2/sample-simple.cfg
+@@ -3,7 +3,7 @@
+ 
+ #################
+ # General configuration.
+-debug = true
++debug = false
+ # syslog = true
+ # structuredlog = true
+ #
+@@ -28,7 +28,7 @@ debug = true
+ [ldaps]
+ # to enable ldaps generate a certificate, eg. with:
+ # openssl req -x509 -newkey rsa:4096 -keyout glauth.key -out glauth.crt -days 365 -nodes -subj '/CN=`hostname`'
+-  enabled = false
++  enabled = true
+   listen = "0.0.0.0:3894"
+   cert = "glauth.crt"
+   key = "glauth.key"
+@@ -48,12 +48,10 @@ debug = true
+ [backend]
+   datastore = "config"
+   baseDN = "dc=glauth,dc=com"
+-  nameformat = "cn"
+-  groupformat = "ou"
+ 
+   # If you are using a client that requires reading the root DSE first
+   # such as SSSD
+-  # anonymousdse = true
++  anonymousdse = false
+ 
+   ## Configure dn format to use structures like 
+   ## "uid=serviceuser,cn=svcaccts,$BASEDN" instead of "cn=serviceuser,ou=svcaccts,$BASEDN"
+@@ -147,6 +145,11 @@ debug = true
+   # passappbcrypt = "243261243130244B62463462656F7265504F762E794F324957746D656541326B4B46596275674A79336A476845764B616D65446169784E41384F4432" # dogood
+   otpsecret = "3hnvnk4ycv44glzigd6s25j4dougs3rk"
+ 
++[[users]]
++  name = "danger"
++  uidnumber = 5006
++  primarygroup = 5503
++  passsha256 = "6478579e37aff45f013e14eeb30b3cc56c72ccdc310123bcdf53e0333e3f416a" # dogood
+ 
+ #################
+ # The groups section contains a hardcoded list of valid users.
+@@ -159,9 +162,16 @@ debug = true
+   gidnumber = 5502
+ 
+ [[groups]]
+-  name = "vpn"
++  name = "umbrella"
+   gidnumber = 5503
+-  includegroups = [ 5501 ]
++  includegroups = [ 5504 ]
++
++[[groups]]
++  name = "danger"
++  gidnumber = 5504
++    [[groups.capabilities]]
++    action = "search"
++    object = "dc=glauth,dc=com"
+ 
+ #################
+ # Enable and configure the optional REST API here.
+diff --git a/v2/scripts/ci/good-results/posixGroupList0 b/v2/scripts/ci/good-results/posixGroupList0
+index 7aeebfc..4fefa8f 100644
+--- a/v2/scripts/ci/good-results/posixGroupList0
++++ b/v2/scripts/ci/good-results/posixGroupList0
+@@ -1,6 +1,6 @@
+ dn: ou=superheros,ou=users,dc=glauth,dc=com
+ ou: superheros
+-uid: superheros
++cn: superheros
+ description: superheros
+ gidNumber: 5501
+ uniqueMember: cn=alexdoe,ou=superheros,ou=users,dc=glauth,dc=com
+@@ -20,7 +20,7 @@ objectClass: top
+ 
+ dn: ou=svcaccts,ou=users,dc=glauth,dc=com
+ ou: svcaccts
+-uid: svcaccts
++cn: svcaccts
+ description: svcaccts
+ gidNumber: 5502
+ uniqueMember: cn=serviceuser,ou=svcaccts,ou=users,dc=glauth,dc=com
+@@ -30,7 +30,7 @@ objectClass: top
+ 
+ dn: ou=vpnaccess,ou=users,dc=glauth,dc=com
+ ou: vpnaccess
+-uid: vpnaccess
++cn: vpnaccess
+ description: vpnaccess
+ gidNumber: 5503
+ uniqueMember: cn=alexdoe,ou=superheros,ou=users,dc=glauth,dc=com
+@@ -50,7 +50,7 @@ objectClass: top
+ 
+ dn: ou=allaccs,ou=users,dc=glauth,dc=com
+ ou: allaccs
+-uid: allaccs
++cn: allaccs
+ description: allaccs
+ gidNumber: 5504
+ uniqueMember: cn=alexdoe,ou=superheros,ou=users,dc=glauth,dc=com
+@@ -72,7 +72,7 @@ objectClass: top
+ 
+ dn: ou=mailadmin,ou=users,dc=glauth,dc=com
+ ou: mailadmin
+-uid: mailadmin
++cn: mailadmin
+ description: mailadmin
+ gidNumber: 5505
+ uniqueMember: cn=alexdoe,ou=superheros,ou=users,dc=glauth,dc=com
+@@ -88,7 +88,7 @@ objectClass: top
+ 
+ dn: ou=webmail,ou=users,dc=glauth,dc=com
+ ou: webmail
+-uid: webmail
++cn: webmail
+ description: webmail
+ gidNumber: 5506
+ objectClass: posixGroup
+@@ -96,7 +96,7 @@ objectClass: top
+ 
+ dn: ou=fulltime,ou=users,dc=glauth,dc=com
+ ou: fulltime
+-uid: fulltime
++cn: fulltime
+ description: fulltime
+ gidNumber: 5507
+ uniqueMember: cn=alexdoe,ou=superheros,ou=users,dc=glauth,dc=com
+-- 
+2.43.0
+
+
+From 039314d365adbbf6ccc22e5f3ce0ea6843bf2ec9 Mon Sep 17 00:00:00 2001
+From: Alessandro Cabbia <alexcabb@gmail.com>
+Date: Sun, 4 Aug 2024 02:08:15 +0200
+Subject: [PATCH 2/2] fix: update ldap library to fix #389 (#430)
+
+---
+ v2/go.mod | 4 ++--
+ v2/go.sum | 8 ++++----
+ 2 files changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/v2/go.mod b/v2/go.mod
+index a3828a6..69a7fc5 100644
+--- a/v2/go.mod
++++ b/v2/go.mod
+@@ -8,7 +8,7 @@ require (
+ 	github.com/arl/statsviz v0.6.0
+ 	github.com/docopt/docopt-go v0.0.0-20180111231733-ee0de3bc6815
+ 	github.com/fsnotify/fsnotify v1.7.0
+-	github.com/glauth/ldap v0.0.0-20231210225823-b9bf4d1baf6e
++	github.com/glauth/ldap v0.0.0-20240419171521-1f14f5c1b4ad
+ 	github.com/jinzhu/copier v0.4.0
+ 	github.com/pquerna/otp v1.4.0
+ 	github.com/prometheus/client_golang v1.18.0
+@@ -34,7 +34,7 @@ require (
+ 	github.com/boombuler/barcode v1.0.1-0.20190219062509-6c824513bacc // indirect
+ 	github.com/cenkalti/backoff/v4 v4.2.1 // indirect
+ 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
+-	github.com/go-asn1-ber/asn1-ber v1.5.4 // indirect
++	github.com/go-asn1-ber/asn1-ber v1.5.5 // indirect
+ 	github.com/go-logr/logr v1.3.0 // indirect
+ 	github.com/go-logr/stdr v1.2.2 // indirect
+ 	github.com/golang/protobuf v1.5.3 // indirect
+diff --git a/v2/go.sum b/v2/go.sum
+index fabae42..068e1dd 100644
+--- a/v2/go.sum
++++ b/v2/go.sum
+@@ -21,10 +21,10 @@ github.com/docopt/docopt-go v0.0.0-20180111231733-ee0de3bc6815 h1:bWDMxwH3px2JBh
+ github.com/docopt/docopt-go v0.0.0-20180111231733-ee0de3bc6815/go.mod h1:WwZ+bS3ebgob9U8Nd0kOddGdZWjyMGR8Wziv+TBNwSE=
+ github.com/fsnotify/fsnotify v1.7.0 h1:8JEhPFa5W2WU7YfeZzPNqzMP6Lwt7L2715Ggo0nosvA=
+ github.com/fsnotify/fsnotify v1.7.0/go.mod h1:40Bi/Hjc2AVfZrqy+aj+yEI+/bRxZnMJyTJwOpGvigM=
+-github.com/glauth/ldap v0.0.0-20231210225823-b9bf4d1baf6e h1:ohe1O2DUo198delHsQvA8O+CgAPP8wv1SmSxLPlO9ao=
+-github.com/glauth/ldap v0.0.0-20231210225823-b9bf4d1baf6e/go.mod h1:EHMcFuVSIs0huelHOhaGtj9IKMB/Dmxo+jDheipjtYA=
+-github.com/go-asn1-ber/asn1-ber v1.5.4 h1:vXT6d/FNDiELJnLb6hGNa309LMsrCoYFvpwHDF0+Y1A=
+-github.com/go-asn1-ber/asn1-ber v1.5.4/go.mod h1:hEBeB/ic+5LoWskz+yKT7vGhhPYkProFKoKdwZRWMe0=
++github.com/glauth/ldap v0.0.0-20240419171521-1f14f5c1b4ad h1:2ERGXiofR9ISXg4evamCngs2EeuMhVJRuDwWGa6bS6s=
++github.com/glauth/ldap v0.0.0-20240419171521-1f14f5c1b4ad/go.mod h1:5ueZMujvJ5nuYPyBj6uQTPV4R1YshboRa/osaP4Emfs=
++github.com/go-asn1-ber/asn1-ber v1.5.5 h1:MNHlNMBDgEKD4TcKr36vQN68BA00aDfjIt3/bD50WnA=
++github.com/go-asn1-ber/asn1-ber v1.5.5/go.mod h1:hEBeB/ic+5LoWskz+yKT7vGhhPYkProFKoKdwZRWMe0=
+ github.com/go-logr/logr v1.2.2/go.mod h1:jdQByPbusPIv2/zmleS9BjJVeZ6kBagPoEUsqbVz/1A=
+ github.com/go-logr/logr v1.3.0 h1:2y3SDp0ZXuc6/cjLSZ+Q3ir+QB9T/iG5yYRXqsagWSY=
+ github.com/go-logr/logr v1.3.0/go.mod h1:9T104GzyrTigFIr8wt5mBrctHMim0Nb2HLGrmQ40KvY=
+-- 
+2.43.0
+
