@@ -16,6 +16,9 @@ GLAuth LDAP server. The GLAuth rock is used by
 the [glauth-k8s-operator](https://github.com/canonical/glauth-k8s-operator)
 charm.
 
+The GLAuth rock also applies patches to fix issues in the upstream project such as https://github.com/glauth/glauth/pull/450. When the patches
+are merged upstream, they will be removed and pulled directly from the original source.
+
 ## Contributing
 
 Please refer to the [CONTRIBUTING](CONTRIBUTING.md) for developer guidance.
