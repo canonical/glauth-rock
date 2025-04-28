@@ -19,6 +19,11 @@ charm.
 The GLAuth rock also applies patches to fix issues in the upstream project such as https://github.com/glauth/glauth/pull/450. When the patches
 are merged upstream, they will be removed and pulled directly from the original source.
 
+## Security
+
+Please see [SECURITY.md](https://github.com/canonical/glauth-rock/blob/main/SECURITY.md)
+for guidelines on reporting security issues.
+
 ## Contributing
 
 Please refer to the [CONTRIBUTING](CONTRIBUTING.md) for developer guidance.
