@@ -1,7 +1,7 @@
 name: glauth
 base: bare
 build-base: ubuntu@22.04
-version: "2.3.2"
+version: "2.4.0"
 summary: GLAuth
 description: |
   GLAuth LDAP authentication server
@@ -27,22 +27,13 @@ parts:
     plugin: nil
     stage-packages:
       - libc6_libs
-  patches:
-    plugin: dump
-    source: patches/
-    organize:
-      "*": patches/
-    prime:
-      - -*
   glauth:
     plugin: make
-    after:
-      - patches
     build-snaps:
       - go/1.23/stable
     source: https://github.com/glauth/glauth
     source-type: git
-    source-tag: v2.3.2
+    source-tag: v2.4.0
     source-subdir: v2
     override-pull: |
       git config --global url."https://github.com/".insteadOf git@github.com:
@@ -50,11 +41,6 @@ parts:
       craftctl default
     override-build: |
       export GOARCH=$(go env GOARCH)
-
-      for patch in ${CRAFT_STAGE}/patches/*.patch; do
-        echo "Applying $(basename "$patch") ..."
-        git -C $CRAFT_PART_SRC am $patch
-      done
 
       echo "###### patch CVEs #######"
       cd $CRAFT_PART_SRC_WORK
