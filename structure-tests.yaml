@@ -1,0 +1,17 @@
+schemaVersion: 2.0.0
+
+fileExistenceTests:
+- name: "no go binary"
+  path: "/usr/bin/go"
+  shouldExist: false
+- name: "application go binary"
+  path: "/bin/glauth"
+  shouldExist: true
+- name: "application config"
+  path: "etc/config/glauth.cfg"
+  shouldExist: true
+commandTests:
+- name: "application version"
+  command: "glauth"
+  args: ["--version"]
+  exitCode: 0
