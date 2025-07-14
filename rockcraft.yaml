@@ -44,8 +44,9 @@ parts:
 
       echo "###### patch CVEs #######"
       cd $CRAFT_PART_SRC_WORK
-      go get -u golang.org/x/crypto
-      go get -u golang.org/x/net
+      go get -u golang.org/x/crypto@v0.35.0
+      go get -u golang.org/x/net@v0.38.0
+      go get -u google.golang.org/protobuf@v1.33.0
       cd -
       echo "#########################"
 
@@ -70,4 +71,10 @@ parts:
     override-prime: |
       set -x
       mkdir -p $CRAFT_PRIME/usr/share/rocks/
-      (echo "# os-release" && cat /etc/os-release && echo "# dpkg-query" && dpkg-query --admindir=$CRAFT_PRIME/var/lib/dpkg/ -f '${db:Status-Abbrev},${binary:Package},${Version},${source:Package},${Source:Version}\n' -W) > $CRAFT_PRIME/usr/share/rocks/dpkg.query
+      DPKG_FORMAT='${db:Status-Abbrev},${binary:Package},${Version},${source:Package},${Source:Version}\n'
+      (
+        echo "# os-release" && \
+        cat /etc/os-release && \
+        echo "# dpkg-query" && \
+        dpkg-query --admindir=$CRAFT_PRIME/var/lib/dpkg/ -f "$DPKG_FORMAT" -W
+      ) > $CRAFT_PRIME/usr/share/rocks/dpkg.query
