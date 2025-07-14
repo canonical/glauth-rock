@@ -44,8 +44,9 @@ parts:
 
       echo "###### patch CVEs #######"
       cd $CRAFT_PART_SRC_WORK
-      go get -u golang.org/x/crypto
-      go get -u golang.org/x/net
+      go get -u golang.org/x/crypto@v0.35.0
+      go get -u golang.org/x/net@v0.38.0
+      go get -u google.golang.org/protobuf@v1.33.0
       cd -
       echo "#########################"
 
