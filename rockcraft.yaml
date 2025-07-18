@@ -65,16 +65,10 @@ parts:
       - bin/glauth
       - bin/postgres.so
   deb-security-manifest:
-    plugin: nil
+    plugin: make
     after:
       - libc
-    override-prime: |
-      set -x
-      mkdir -p $CRAFT_PRIME/usr/share/rocks/
-      DPKG_FORMAT='${db:Status-Abbrev},${binary:Package},${Version},${source:Package},${Source:Version}\n'
-      (
-        echo "# os-release" && \
-        cat /etc/os-release && \
-        echo "# dpkg-query" && \
-        dpkg-query --admindir=$CRAFT_PRIME/var/lib/dpkg/ -f "$DPKG_FORMAT" -W
-      ) > $CRAFT_PRIME/usr/share/rocks/dpkg.query
+    source: https://github.com/canonical/rocks-security-manifest
+    source-type: git
+    source-branch: main
+    override-prime: gen_manifest
