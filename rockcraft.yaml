@@ -30,7 +30,7 @@ parts:
   glauth:
     plugin: make
     build-snaps:
-      - go/1.23/stable
+      - go/1.25/stable
     source: https://github.com/glauth/glauth
     source-type: git
     source-tag: v2.4.0
