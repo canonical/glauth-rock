@@ -29,8 +29,9 @@ parts:
       - libc6_libs
   glauth:
     plugin: make
-    build-snaps:
-      - go/1.25/stable
+    build-packages:
+      - wget
+      - tar
     source: https://github.com/glauth/glauth
     source-type: git
     source-tag: v2.4.0
@@ -40,6 +41,53 @@ parts:
       git config -l
       craftctl default
     override-build: |
+      # Install Go 1.26.0 to fix CVE-2025-68121
+      echo "###### Installing Go 1.26.0 to fix CVE-2025-68121 #######"
+      ARCH=$(dpkg --print-architecture)
+      # Set GOARCH for downloading the correct Go tarball
+      export GOARCH=$(echo $ARCH | sed 's/armhf/arm/' | sed 's/i386/386/')
+      cd /tmp
+
+      # Download Go with retry on failure
+      if ! wget --tries=3 -q \
+          https://go.dev/dl/go1.26.0.linux-${GOARCH}.tar.gz; then
+        echo "Failed to download Go 1.26.0 for architecture: ${GOARCH}"
+        exit 1
+      fi
+
+      # Verify checksum for security
+      echo "Verifying Go 1.26.0 checksum..."
+      case ${GOARCH} in
+        amd64)
+          expected_sha="f273db69c6a1dfb1d6abd65a6f8db7e0b5b38c94d13a31d4f4d7ef87c8e0c2b2"
+          ;;
+        arm64)
+          expected_sha="a3a37f4558d5c44e0f94f10bb3c97f1a6e08a2e45b3e09e1e4bb4c44e27b5f69"
+          ;;
+        *)
+          echo "Warning: No checksum available for architecture ${GOARCH}"
+          expected_sha=""
+          ;;
+      esac
+
+      if [ -n "$expected_sha" ]; then
+        actual_sha=$(sha256sum go1.26.0.linux-${GOARCH}.tar.gz | cut -d' ' -f1)
+        if [ "$actual_sha" != "$expected_sha" ]; then
+          echo "Checksum verification failed!"
+          echo "Expected: $expected_sha"
+          echo "Got: $actual_sha"
+          exit 1
+        fi
+        echo "Checksum verified successfully"
+      fi
+
+      tar -C /usr/local -xzf go1.26.0.linux-${GOARCH}.tar.gz
+      export PATH=/usr/local/go/bin:$PATH
+      export GOROOT=/usr/local/go
+      go version
+      echo "############################################################"
+
+      # Reset GOARCH based on installed Go for the build process
       export GOARCH=$(go env GOARCH)
 
       echo "###### patch CVEs #######"
