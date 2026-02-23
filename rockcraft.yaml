@@ -44,6 +44,7 @@ parts:
       # Install Go 1.26.0 to fix CVE-2025-68121
       echo "###### Installing Go 1.26.0 to fix CVE-2025-68121 #######"
       ARCH=$(dpkg --print-architecture)
+      # Set GOARCH for downloading the correct Go tarball
       export GOARCH=$(echo $ARCH | sed 's/armhf/arm/' | sed 's/i386/386/')
       cd /tmp
 
@@ -86,6 +87,7 @@ parts:
       go version
       echo "############################################################"
 
+      # Reset GOARCH based on installed Go for the build process
       export GOARCH=$(go env GOARCH)
 
       echo "###### patch CVEs #######"
