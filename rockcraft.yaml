@@ -9,6 +9,7 @@ license: Apache-2.0
 run-user: _daemon_
 platforms:
   amd64:
+  arm64:
 services:
   glauth:
     override: replace
@@ -40,7 +41,7 @@ parts:
       git config -l
       craftctl default
     override-build: |
-      export GOARCH=$(go env GOARCH)
+      export GOARCH="${CRAFT_ARCH_BUILD_FOR}"
 
       echo "###### patch CVEs #######"
       cd $CRAFT_PART_SRC_WORK
