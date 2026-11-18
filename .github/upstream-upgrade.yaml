@@ -1,0 +1,19 @@
+# Configuration for canonical/identity-team upstream-upgrade workflows.
+# Upstream repository, tag prefix, source-subdir, and rock image are auto-detected from rockcraft.yaml.
+
+diffed_files:
+  - Dockerfile
+
+charms:
+  - key: glauth
+    repo: canonical/glauth-k8s-operator
+    description: >-
+      Deploys the GLAuth LDAP authentication server backed by PostgreSQL
+      with TLS certificates and auxiliary LDAP client integrations.
+    files:
+      - charmcraft.yaml
+      - src/charm.py
+      - src/configs.py
+      - src/constants.py
+      - src/database.py
+      - src/integrations.py
