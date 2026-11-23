@@ -1,7 +1,7 @@
 name: glauth
 base: bare
 build-base: ubuntu@22.04
-version: "2.4.0"
+version: "2.5.5"
 summary: GLAuth
 description: |
   GLAuth LDAP authentication server
@@ -34,7 +34,7 @@ parts:
       - go/1.26/stable
     source: https://github.com/glauth/glauth
     source-type: git
-    source-tag: v2.4.0
+    source-tag: GLAuth-v2.5.5
     source-subdir: v2
     override-pull: |
       git config --global url."https://github.com/".insteadOf git@github.com:
@@ -45,11 +45,10 @@ parts:
 
       echo "###### patch CVEs #######"
       cd $CRAFT_PART_SRC_WORK
-      go get -u golang.org/x/crypto@v0.35.0
-      go get -u golang.org/x/net@v0.38.0
-      go get -u google.golang.org/protobuf@v1.33.0
-      go get -u go.opentelemetry.io/otel/sdk@v1.43.0
-      go get -u google.golang.org/grpc@v1.80.0
+      # GO-2026-6612/6617: HTTP/2 races fixed in x/net v0.60.0;
+      # glauth v2.5.5 still pins v0.58.0. All other former pins are
+      # already satisfied by upstream.
+      go get -u golang.org/x/net@v0.60.0
 
       cd -
       echo "#########################"
